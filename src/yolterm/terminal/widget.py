@@ -7,10 +7,11 @@ import re
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QFont, QKeyEvent, QTextCursor
+from PySide6.QtGui import QKeyEvent, QTextCursor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QVBoxLayout, QWidget
 
 from ..commands import CommandKind, CommandRouter
+from ..ui.theme import INPUT_STYLE, OUTPUT_STYLE, CYAN, monospace_font
 from .session import ShellSession
 
 
@@ -31,27 +32,16 @@ class TerminalWidget(QWidget):
         self.output = QPlainTextEdit(self)
         self.output.setReadOnly(True)
         self.output.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.output.setFont(self._terminal_font())
-        self.output.setStyleSheet(
-            "QPlainTextEdit { background-color: #080817; color: #e8e6ff; "
-            "selection-background-color: #442b68; selection-color: #ffffff; "
-            "border: 1px solid #5b2a86; border-radius: 6px; padding: 12px; "
-            "} QScrollBar:vertical { background: #111126; width: 10px; margin: 2px; } "
-            "QScrollBar::handle:vertical { background: #7b3fb2; min-height: 28px; "
-            "border-radius: 5px; } QScrollBar::handle:vertical:hover { background: #b44cff; } "
-            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }"
-        )
+        self.output.setFont(monospace_font())
+        self.output.setStyleSheet(OUTPUT_STYLE)
         self.output.setCursorWidth(0)
 
         self.prompt_label = QLabel(self)
         self.prompt_label.setFont(self.output.font())
-        self.prompt_label.setStyleSheet("color: #55e6ff; padding: 0 4px 0 8px;")
+        self.prompt_label.setStyleSheet(f"color: {CYAN}; padding: 0 4px 0 8px;")
         self.input_line = QLineEdit(self)
         self.input_line.setFont(self.output.font())
-        self.input_line.setStyleSheet(
-            "QLineEdit { background: #111126; color: #ff8de1; border: 1px solid #7b3fb2; "
-            "border-radius: 4px; padding: 6px 8px; selection-background-color: #5b2a86; }"
-        )
+        self.input_line.setStyleSheet(INPUT_STYLE)
         self.input_line.installEventFilter(self)
 
         input_layout = QHBoxLayout()
@@ -165,10 +155,3 @@ class TerminalWidget(QWidget):
             display = f"{path.anchor}…{Path(*parts[-2:])}"
         suffix = "> " if os.name == "nt" else " $ "
         return f"❯ {display}{suffix}"
-
-    @staticmethod
-    def _terminal_font() -> QFont:
-        font = QFont()
-        font.setFamilies(["JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Consolas", "monospace"])
-        font.setPointSize(11)
-        return font
