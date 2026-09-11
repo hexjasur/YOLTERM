@@ -1,20 +1,20 @@
-"""Terminal display and input widget."""
+"""Separated terminal output and command input widgets."""
 
 from __future__ import annotations
 
 import os
 import re
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QFont, QKeyEvent, QTextCursor
-from PySide6.QtWidgets import QPlainTextEdit, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QVBoxLayout, QWidget
 
 from ..commands import CommandKind, CommandRouter
 from .session import ShellSession
 
 
-class TerminalWidget(QPlainTextEdit):
-    """A deliberately small terminal-like text editor backed by a shell session."""
+class TerminalWidget(QWidget):
+    """Terminal UI with immutable output and a dedicated editable input line."""
 
     _ANSI_ESCAPE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
@@ -24,13 +24,13 @@ class TerminalWidget(QPlainTextEdit):
         self._session = ShellSession(self._router.filesystem.current_directory, self)
         self._history: list[str] = []
         self._history_index = 0
-        self._prompt_start = 0
-        self._prompt = self._default_prompt()
+        self._prompt = ""
 
-        self.setUndoRedoEnabled(False)
-        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.setFont(QFont("Consolas", 11))
-        self.setStyleSheet(
+        self.output = QPlainTextEdit(self)
+        self.output.setReadOnly(True)
+        self.output.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.output.setFont(QFont("Consolas", 11))
+        self.output.setStyleSheet(
             "QPlainTextEdit { background-color: #080817; color: #e8e6ff; "
             "selection-background-color: #442b68; selection-color: #ffffff; "
             "border: 1px solid #5b2a86; border-radius: 6px; padding: 12px; "
@@ -39,137 +39,121 @@ class TerminalWidget(QPlainTextEdit):
             "border-radius: 5px; } QScrollBar::handle:vertical:hover { background: #b44cff; } "
             "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }"
         )
-        self.setCursorWidth(8)
+        self.output.setCursorWidth(0)
+
+        self.prompt_label = QLabel(self)
+        self.prompt_label.setFont(self.output.font())
+        self.prompt_label.setStyleSheet("color: #55e6ff; padding: 0 4px 0 8px;")
+        self.input_line = QLineEdit(self)
+        self.input_line.setFont(self.output.font())
+        self.input_line.setStyleSheet(
+            "QLineEdit { background: #111126; color: #ff8de1; border: 1px solid #7b3fb2; "
+            "border-radius: 4px; padding: 6px 8px; selection-background-color: #5b2a86; }"
+        )
+        self.input_line.installEventFilter(self)
+
+        input_layout = QHBoxLayout()
+        input_layout.setContentsMargins(0, 8, 0, 0)
+        input_layout.setSpacing(4)
+        input_layout.addWidget(self.prompt_label)
+        input_layout.addWidget(self.input_line, 1)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.output, 1)
+        layout.addLayout(input_layout)
+
         self._session.output_received.connect(self._append_output)
         self._session.error_received.connect(self._append_output)
-        self._session.prompt_received.connect(self._append_prompt)
+        self._session.prompt_received.connect(self._on_shell_prompt)
         self._session.finished.connect(self._on_session_finished)
         self._session.start()
-        self._append_prompt()
+        self._show_prompt()
+        self.input_line.setFocus()
 
     def close_session(self) -> None:
-        """Stop the child shell process."""
         self._session.stop()
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:
-        """Handle editing only within the current command input area."""
-        key = event.key()
-        modifiers = event.modifiers()
-
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self._execute_current_input()
-            return
-        if key == Qt.Key.Key_L and modifiers & Qt.KeyboardModifier.ControlModifier:
-            self.clear()
-            self._append_prompt()
-            return
-        if key == Qt.Key.Key_C and modifiers & Qt.KeyboardModifier.ControlModifier:
-            if not self.textCursor().hasSelection():
-                self._session.interrupt()
-                self._append_output("^C\n")
-            else:
-                self.copy()
-            return
-        if key == Qt.Key.Key_Up:
-            self._history_move(-1)
-            return
-        if key == Qt.Key.Key_Down:
-            self._history_move(1)
-            return
-
-        self._keep_cursor_in_input()
-        if key == Qt.Key.Key_Backspace and self.textCursor().position() <= self._prompt_start:
-            return
-        if key == Qt.Key.Key_Left and self.textCursor().position() <= self._prompt_start:
-            return
-        if key == Qt.Key.Key_Home:
-            self._move_cursor(self._prompt_start)
-            return
-        if key == Qt.Key.Key_End:
-            self._move_cursor(len(self.toPlainText()))
-            return
-        super().keyPressEvent(event)
-        self._keep_cursor_in_input()
-
-    def mousePressEvent(self, event) -> None:
-        super().mousePressEvent(event)
-        self._keep_cursor_in_input()
+    def eventFilter(self, watched: object, event: QEvent) -> bool:
+        if watched is self.input_line and event.type() == QEvent.Type.KeyPress:
+            key_event = event  # type: ignore[assignment]
+            if isinstance(key_event, QKeyEvent):
+                if key_event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                    self._execute_current_input()
+                    return True
+                if key_event.key() == Qt.Key.Key_Up:
+                    self._history_move(-1)
+                    return True
+                if key_event.key() == Qt.Key.Key_Down:
+                    self._history_move(1)
+                    return True
+                if key_event.key() == Qt.Key.Key_L and key_event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                    self.output.clear()
+                    self._show_prompt()
+                    return True
+                if key_event.key() == Qt.Key.Key_C and key_event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                    if self.input_line.hasSelectedText():
+                        self.input_line.copy()
+                    else:
+                        self._session.interrupt()
+                    return True
+        return super().eventFilter(watched, event)
 
     def _execute_current_input(self) -> None:
-        command = self.toPlainText()[self._prompt_start :].replace("\n", "").strip()
-        self._move_to_end()
-        self.insertPlainText("\n")
+        command = self.input_line.text().strip()
         if not command:
-            self._append_prompt()
+            self.input_line.clear()
             return
-
         if not self._history or self._history[-1] != command:
             self._history.append(command)
         self._history_index = len(self._history)
+        self._render_submitted_command(command)
+        self.input_line.clear()
         routed = self._router.route(command)
         if routed.kind is CommandKind.NATIVE:
             output = self._router.execute_native(routed)
-            if routed.name == "cd" and not output.startswith(("Usage:", "Directory not found:", "Unable to")):
+            if routed.name == "cd" and not output.startswith(("Usage:", "Directory not found:", "Unable")):
                 self._session.sync_working_directory(self._router.filesystem.current_directory)
             self._append_output(output)
-            self._append_prompt()
+            self._show_prompt()
         else:
             self._session.send_command(command)
+        self.input_line.setFocus()
+
+    def _render_submitted_command(self, command: str) -> None:
+        self._append_output(f"{self._prompt}{command}\n")
+        self._scroll_to_bottom()
 
     def _append_output(self, text: str) -> None:
         cleaned = self._ANSI_ESCAPE.sub("", text).replace("\r", "")
         if not cleaned:
             return
-        self._move_to_end()
-        self.insertPlainText(cleaned)
-        self.ensureCursorVisible()
-        if self._looks_like_prompt(cleaned):
-            self._prompt_start = len(self.toPlainText())
+        self.output.moveCursor(QTextCursor.MoveOperation.End)
+        self.output.insertPlainText(cleaned)
+        self._scroll_to_bottom()
 
-    def _append_prompt(self) -> None:
+    def _show_prompt(self) -> None:
         self._prompt = self._default_prompt()
-        self._move_to_end()
-        if self.toPlainText() and not self.toPlainText().endswith("\n"):
-            self.insertPlainText("\n")
-        self.insertPlainText(self._prompt)
-        self._prompt_start = len(self.toPlainText())
-        self.ensureCursorVisible()
+        self.prompt_label.setText(self._prompt)
+
+    def _on_shell_prompt(self) -> None:
+        self._show_prompt()
+        self.input_line.setFocus()
 
     def _history_move(self, direction: int) -> None:
         if not self._history:
             return
         self._history_index = max(0, min(len(self._history), self._history_index + direction))
         value = self._history[self._history_index] if self._history_index < len(self._history) else ""
-        self._replace_input(value)
+        self.input_line.setText(value)
+        self.input_line.setCursorPosition(len(value))
 
-    def _replace_input(self, value: str) -> None:
-        cursor = self.textCursor()
-        cursor.setPosition(self._prompt_start)
-        cursor.movePosition(QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor)
-        cursor.insertText(value)
-        self.setTextCursor(cursor)
-
-    def _move_cursor(self, position: int) -> None:
-        cursor = self.textCursor()
-        cursor.setPosition(position)
-        self.setTextCursor(cursor)
-
-    def _move_to_end(self) -> None:
-        cursor = self.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        self.setTextCursor(cursor)
-
-    def _keep_cursor_in_input(self) -> None:
-        if self.textCursor().position() < self._prompt_start:
-            self._move_cursor(self._prompt_start)
-
-    def _looks_like_prompt(self, text: str) -> bool:
-        return text.endswith("> ") or text.endswith("$ ") or text.endswith("# ")
+    def _scroll_to_bottom(self) -> None:
+        self.output.ensureCursorVisible()
+        scrollbar = self.output.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
 
     def _on_session_finished(self) -> None:
-        if self.toPlainText() and not self.toPlainText().endswith("\n"):
-            self.insertPlainText("\n")
-        self._append_output("Shell session ended.\n")
+        self._append_output("\nShell session ended.\n")
 
     def _default_prompt(self) -> str:
         suffix = "> " if os.name == "nt" else " $ "

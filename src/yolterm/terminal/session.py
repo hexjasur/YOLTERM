@@ -32,6 +32,7 @@ class ShellSession(QObject):
         self._shell_ready = False
         self._user_command_started = False
         self._pending_echo = ""
+        self._awaiting_prompt = False
 
     @property
     def is_running(self) -> bool:
@@ -44,6 +45,7 @@ class ShellSession(QObject):
         self._shell_ready = False
         self._user_command_started = False
         self._pending_echo = ""
+        self._awaiting_prompt = False
         if sys.platform == "win32":
             program = os.environ.get("COMSPEC", "cmd.exe")
             arguments = ["/Q", "/D"]
@@ -58,6 +60,7 @@ class ShellSession(QObject):
         if self.is_running:
             self._user_command_started = True
             self._pending_echo = command
+            self._awaiting_prompt = True
             self._write(command)
 
     def sync_working_directory(self, working_directory: Path) -> None:
@@ -111,7 +114,8 @@ class ShellSession(QObject):
             before, self._output_buffer = self._output_buffer.split(marker, 1)
             if self._shell_ready and before:
                 self._emit_clean_output(before)
-            if self._shell_ready:
+            if self._shell_ready and self._awaiting_prompt:
+                self._awaiting_prompt = False
                 self.prompt_received.emit()
             else:
                 self._shell_ready = True
