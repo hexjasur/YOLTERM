@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
@@ -15,8 +16,9 @@ class ShellSession(QObject):
     error_received = Signal(str)
     finished = Signal()
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(self, working_directory: Path | None = None, parent: QObject | None = None) -> None:
         super().__init__(parent)
+        self.working_directory = (working_directory or Path.cwd()).resolve()
         self._process = QProcess(self)
         self._process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
         self._process.readyReadStandardOutput.connect(self._read_stdout)
@@ -42,6 +44,7 @@ class ShellSession(QObject):
             program = os.environ.get("SHELL", "/bin/sh")
             arguments = ["-i"]
 
+        self._process.setWorkingDirectory(str(self.working_directory))
         self._process.start(program, arguments)
 
     def send_command(self, command: str) -> None:
@@ -49,12 +52,15 @@ class ShellSession(QObject):
         if self.is_running:
             self._process.write((command + "\n").encode())
 
-    def sync_working_directory(self) -> None:
+    def sync_working_directory(self, working_directory: Path) -> None:
         """Keep the external shell aligned with YOLTERM's native cwd."""
+        self.working_directory = working_directory.resolve()
+        if not self.is_running:
+            return
         if sys.platform == "win32":
-            self.send_command(f'cd /d "{os.getcwd()}"')
+            self.send_command(f'cd /d "{self.working_directory}"')
         else:
-            self.send_command(f'cd -- "{os.getcwd()}"')
+            self.send_command(f'cd -- "{self.working_directory}"')
 
     def interrupt(self) -> None:
         """Request an interrupt from the active shell session."""

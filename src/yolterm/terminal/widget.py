@@ -20,8 +20,8 @@ class TerminalWidget(QPlainTextEdit):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._session = ShellSession(self)
         self._router = CommandRouter()
+        self._session = ShellSession(self._router.filesystem.current_directory, self)
         self._history: list[str] = []
         self._history_index = 0
         self._prompt_start = 0
@@ -97,13 +97,14 @@ class TerminalWidget(QPlainTextEdit):
             self._append_prompt()
             return
 
-        self._history.append(command)
+        if not self._history or self._history[-1] != command:
+            self._history.append(command)
         self._history_index = len(self._history)
         routed = self._router.route(command)
         if routed.kind is CommandKind.NATIVE:
             output = self._router.execute_native(routed)
             if routed.name == "cd" and not output.startswith(("Usage:", "Directory not found:", "Unable to")):
-                self._session.sync_working_directory()
+                self._session.sync_working_directory(self._router.filesystem.current_directory)
             self._append_output(output)
             self._append_prompt()
         else:
@@ -159,6 +160,6 @@ class TerminalWidget(QPlainTextEdit):
             self.insertPlainText("\n")
         self._append_output("Shell session ended.\n")
 
-    @staticmethod
-    def _default_prompt() -> str:
-        return f"{os.getcwd()}> " if os.name == "nt" else f"{os.getcwd()} $ "
+    def _default_prompt(self) -> str:
+        suffix = "> " if os.name == "nt" else " $ "
+        return f"{self._router.filesystem.current_directory}{suffix}"

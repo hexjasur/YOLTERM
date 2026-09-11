@@ -4,7 +4,7 @@ YOLTERM is a modern developer terminal for Windows, planned to combine terminal 
 
 ## Current status
 
-Phase 3 adds a command routing layer and native filesystem commands: `pwd`, `cd`, `ls`, `mkdir`, and `tree`. These commands use Python filesystem APIs and maintain YOLTERM's own working directory. Other commands continue to run through the asynchronous shell session. On Windows the initial backend is `cmd.exe`; non-Windows development environments use an interactive system shell for testing. PowerShell integration, Git/npm tooling, and drag-and-drop are not implemented yet.
+Phase 3 adds a command routing layer and native filesystem commands: `pwd`, `cd`, `ls`, `mkdir`, and `tree`. These commands use Python filesystem APIs and maintain YOLTERM's own explicit session directory, independent of the Python process working directory. Other commands continue to run through the asynchronous shell session. On Windows the initial backend is `cmd.exe`; non-Windows development environments use an interactive system shell for testing. PowerShell integration, Git/npm tooling, and drag-and-drop are not implemented yet.
 
 ## Requirements
 
