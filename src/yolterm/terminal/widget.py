@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QFont, QKeyEvent, QTextCursor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QVBoxLayout, QWidget
 
@@ -16,6 +17,7 @@ from .session import ShellSession
 class TerminalWidget(QWidget):
     """Terminal UI with immutable output and a dedicated editable input line."""
 
+    command_started = Signal()
     _ANSI_ESCAPE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -29,7 +31,7 @@ class TerminalWidget(QWidget):
         self.output = QPlainTextEdit(self)
         self.output.setReadOnly(True)
         self.output.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.output.setFont(QFont("Consolas", 11))
+        self.output.setFont(self._terminal_font())
         self.output.setStyleSheet(
             "QPlainTextEdit { background-color: #080817; color: #e8e6ff; "
             "selection-background-color: #442b68; selection-color: #ffffff; "
@@ -106,6 +108,7 @@ class TerminalWidget(QWidget):
         if not self._history or self._history[-1] != command:
             self._history.append(command)
         self._history_index = len(self._history)
+        self.command_started.emit()
         self._render_submitted_command(command)
         self.input_line.clear()
         routed = self._router.route(command)
@@ -121,7 +124,6 @@ class TerminalWidget(QWidget):
 
     def _render_submitted_command(self, command: str) -> None:
         self._append_output(f"{self._prompt}{command}\n")
-        self._scroll_to_bottom()
 
     def _append_output(self, text: str) -> None:
         cleaned = self._ANSI_ESCAPE.sub("", text).replace("\r", "")
@@ -156,5 +158,17 @@ class TerminalWidget(QWidget):
         self._append_output("\nShell session ended.\n")
 
     def _default_prompt(self) -> str:
+        path = self._router.filesystem.current_directory
+        display = str(path)
+        if len(display) > 270:
+            parts = list(path.parts)
+            display = f"{path.anchor}…{Path(*parts[-2:])}"
         suffix = "> " if os.name == "nt" else " $ "
-        return f"❯ {self._router.filesystem.current_directory}{suffix}"
+        return f"❯ {display}{suffix}"
+
+    @staticmethod
+    def _terminal_font() -> QFont:
+        font = QFont()
+        font.setFamilies(["JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Consolas", "monospace"])
+        font.setPointSize(11)
+        return font
