@@ -7,8 +7,9 @@ import re
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QKeyEvent, QTextCursor
-from PySide6.QtWidgets import QPlainTextEdit
+from PySide6.QtWidgets import QPlainTextEdit, QWidget
 
+from ..commands import CommandKind, CommandRouter
 from .session import ShellSession
 
 
@@ -17,9 +18,10 @@ class TerminalWidget(QPlainTextEdit):
 
     _ANSI_ESCAPE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
-    def __init__(self, parent: QPlainTextEdit | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._session = ShellSession(self)
+        self._router = CommandRouter()
         self._history: list[str] = []
         self._history_index = 0
         self._prompt_start = 0
@@ -91,12 +93,21 @@ class TerminalWidget(QPlainTextEdit):
         command = self.toPlainText()[self._prompt_start :].replace("\n", "").strip()
         self._move_cursor(len(self.toPlainText()))
         self.insertPlainText("\n")
-        if command:
-            self._history.append(command)
-            self._history_index = len(self._history)
-            self._session.send_command(command)
-        else:
+        if not command:
             self._append_prompt()
+            return
+
+        self._history.append(command)
+        self._history_index = len(self._history)
+        routed = self._router.route(command)
+        if routed.kind is CommandKind.NATIVE:
+            output = self._router.execute_native(routed)
+            if routed.name == "cd" and not output.startswith(("Usage:", "Directory not found:", "Unable to")):
+                self._session.sync_working_directory()
+            self._append_output(output)
+            self._append_prompt()
+        else:
+            self._session.send_command(command)
 
     def _append_output(self, text: str) -> None:
         cleaned = self._ANSI_ESCAPE.sub("", text).replace("\r", "")
@@ -109,6 +120,7 @@ class TerminalWidget(QPlainTextEdit):
             self._prompt_start = len(self.toPlainText())
 
     def _append_prompt(self) -> None:
+        self._prompt = self._default_prompt()
         self._move_cursor(len(self.toPlainText()))
         if self.toPlainText() and not self.toPlainText().endswith("\n"):
             self.insertPlainText("\n")

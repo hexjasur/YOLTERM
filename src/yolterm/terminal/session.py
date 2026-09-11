@@ -49,6 +49,13 @@ class ShellSession(QObject):
         if self.is_running:
             self._process.write((command + "\n").encode())
 
+    def sync_working_directory(self) -> None:
+        """Keep the external shell aligned with YOLTERM's native cwd."""
+        if sys.platform == "win32":
+            self.send_command(f'cd /d "{os.getcwd()}"')
+        else:
+            self.send_command(f'cd -- "{os.getcwd()}"')
+
     def interrupt(self) -> None:
         """Request an interrupt from the active shell session."""
         if self.is_running:
@@ -56,7 +63,7 @@ class ShellSession(QObject):
 
     def stop(self) -> None:
         """Terminate the child shell cleanly when the application closes."""
-        if not self.is_running:
+        if self._process.state() == QProcess.ProcessState.NotRunning:
             return
         self._process.terminate()
         if not self._process.waitForFinished(1500):
@@ -75,4 +82,3 @@ class ShellSession(QObject):
 
     def _on_finished(self) -> None:
         self.finished.emit()
-
