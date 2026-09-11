@@ -31,12 +31,18 @@ class TerminalWidget(QPlainTextEdit):
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.setFont(QFont("Consolas", 11))
         self.setStyleSheet(
-            "QPlainTextEdit { background-color: #080808; color: #f2f2f2; "
-            "selection-background-color: #3d5a80; border: none; padding: 12px; }"
+            "QPlainTextEdit { background-color: #080817; color: #e8e6ff; "
+            "selection-background-color: #442b68; selection-color: #ffffff; "
+            "border: 1px solid #5b2a86; border-radius: 6px; padding: 12px; "
+            "} QScrollBar:vertical { background: #111126; width: 10px; margin: 2px; } "
+            "QScrollBar::handle:vertical { background: #7b3fb2; min-height: 28px; "
+            "border-radius: 5px; } QScrollBar::handle:vertical:hover { background: #b44cff; } "
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }"
         )
         self.setCursorWidth(8)
         self._session.output_received.connect(self._append_output)
         self._session.error_received.connect(self._append_output)
+        self._session.prompt_received.connect(self._append_prompt)
         self._session.finished.connect(self._on_session_finished)
         self._session.start()
         self._append_prompt()
@@ -91,7 +97,7 @@ class TerminalWidget(QPlainTextEdit):
 
     def _execute_current_input(self) -> None:
         command = self.toPlainText()[self._prompt_start :].replace("\n", "").strip()
-        self._move_cursor(len(self.toPlainText()))
+        self._move_to_end()
         self.insertPlainText("\n")
         if not command:
             self._append_prompt()
@@ -114,7 +120,7 @@ class TerminalWidget(QPlainTextEdit):
         cleaned = self._ANSI_ESCAPE.sub("", text).replace("\r", "")
         if not cleaned:
             return
-        self._move_cursor(len(self.toPlainText()))
+        self._move_to_end()
         self.insertPlainText(cleaned)
         self.ensureCursorVisible()
         if self._looks_like_prompt(cleaned):
@@ -122,7 +128,7 @@ class TerminalWidget(QPlainTextEdit):
 
     def _append_prompt(self) -> None:
         self._prompt = self._default_prompt()
-        self._move_cursor(len(self.toPlainText()))
+        self._move_to_end()
         if self.toPlainText() and not self.toPlainText().endswith("\n"):
             self.insertPlainText("\n")
         self.insertPlainText(self._prompt)
@@ -148,6 +154,11 @@ class TerminalWidget(QPlainTextEdit):
         cursor.setPosition(position)
         self.setTextCursor(cursor)
 
+    def _move_to_end(self) -> None:
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self.setTextCursor(cursor)
+
     def _keep_cursor_in_input(self) -> None:
         if self.textCursor().position() < self._prompt_start:
             self._move_cursor(self._prompt_start)
@@ -162,4 +173,4 @@ class TerminalWidget(QPlainTextEdit):
 
     def _default_prompt(self) -> str:
         suffix = "> " if os.name == "nt" else " $ "
-        return f"{self._router.filesystem.current_directory}{suffix}"
+        return f"❯ {self._router.filesystem.current_directory}{suffix}"
