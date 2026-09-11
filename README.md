@@ -4,7 +4,7 @@ YOLTERM is a modern developer terminal for Windows, planned to combine terminal 
 
 ## Current status
 
-This repository contains the initial Python desktop application foundation only. It currently opens a minimal PySide6 window titled **YOLTERM**. Terminal functionality and other product features have not been implemented yet.
+Phase 2 provides the initial terminal interface foundation. YOLTERM now displays a dark, monospace terminal area backed by an asynchronous shell session. On Windows the initial backend is `cmd.exe`; non-Windows development environments use an interactive system shell for testing. Custom commands, PowerShell integration, Git/npm tooling, filesystem navigation, and drag-and-drop are not implemented yet.
 
 ## Requirements
 
@@ -51,6 +51,8 @@ With the virtual environment activated:
 ```bash
 python -m yolterm
 ```
+
+Type a shell command and press Enter. Basic history navigation, cursor editing, selection, copy/paste, Ctrl+C interruption, and Ctrl+L clearing are supported.
 
 ## Development
 
